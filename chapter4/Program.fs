@@ -1,50 +1,49 @@
-﻿module Chapter4
+module Chapter4
 
 (*
     Each node of AST is attached with some information
       - message about parsed token
       - possition of the token in source file
 *)
+[<RequireQualifiedAccess>]
 type Info =
-| Fi of string * int // File information
-| Unknown
+    | Fi of string * int // File information
+    | Unknown
 
-(* 
+(*
     // terms
-    t ::= 
+    t ::=
         | true | false | if t then t else t
         | 0 | succ t | pred t | iszero t
-    
+
     // values: bool values + numerical values
-    v ::= 
-        | true | false 
+    v ::=
+        | true | false
         | nv
 
     // numerical values
-    nv ::= 
+    nv ::=
         | 0 | succ nv
 *)
-type Term = 
-| TmTrue of Info
-| TmFalse of Info
-| TmIf of Info * Term * Term * Term
-| TmZero of Info
-| TmSucc of Info * Term
-| TmPred of Info * Term
-| TmIsZero of Info * Term
+type Term =
+    | TmTrue of Info
+    | TmFalse of Info
+    | TmIf of Info * Term * Term * Term
+    | TmZero of Info
+    | TmSucc of Info * Term
+    | TmPred of Info * Term
+    | TmIsZero of Info * Term
 
-
-let rec isNumericalValue t = 
+let rec isNumericalValue t =
     match t with
     | TmZero(_) -> true
     | TmSucc(_, t1) -> isNumericalValue t1
     | _ -> false
 
 let isValue t =
-    match t with 
+    match t with
     | TmTrue(_) | TmFalse(_) -> true
     | _ -> isNumericalValue t
-
 
 (*
     Evaluations:
@@ -85,29 +84,51 @@ exception NoRuleApplies
 // small-step evaluation
 let rec smallStepEvaluate t =
     match t with
-    | TmIf(_, TmTrue(_), t2, _) -> t2        // E-IfTrue
-    | TmIf(_, TmFalse(_), _, t3) -> t3       // E-IfFalse
-    | TmIf(fi, t1, t2, t3) ->                // E-If
+    | TmIf(_, TmTrue(_), t2, _) -> t2                               // E-IfTrue
+    | TmIf(_, TmFalse(_), _, t3) -> t3                              // E-IfFalse
+    | TmIf(fi, t1, t2, t3) ->                                       // E-If
         let t1' = smallStepEvaluate t1
         TmIf(fi, t1', t2, t3)
-    | TmSucc(fi, t1) ->                      // E-Succ
+    | TmSucc(fi, t1) ->                                             // E-Succ
         let t1' = smallStepEvaluate t1
         TmSucc(fi, t1')
-    | TmPred(fi, TmZero(_)) -> TmZero(fi)    // E-PredZero
-    | TmPred(_, TmSucc(_, nv1))              // E-PredSucc
-        when isNumericalValue nv1 -> nv1
-    | TmPred(fi, t1) ->                      // E-Pred
+    | TmPred(_, TmZero(_)) -> TmZero(Info.Unknown)                  // E-PredZero
+    | TmPred(_, TmSucc(_, nv1)) when isNumericalValue nv1 -> nv1    // E-PredSucc
+    | TmPred(fi, t1) ->                                             // E-Pred
         let t1' = smallStepEvaluate t1
         TmPred(fi, t1')
-    | TmIsZero(fi, TmZero(_)) -> TmTrue(fi)  // E-IsZeroZero
-    | TmIsZero(fi, TmSucc(_)) -> TmFalse(fi) // E-IsZeroSucc
-    | TmIsZero(fi, t1) ->                    // E-IsZero
+    | TmIsZero(_, TmZero(_)) -> TmTrue(Info.Unknown)                // E-IsZeroZero
+    | TmIsZero(_, TmSucc(_, nv1)) when isNumericalValue nv1 ->
+        TmFalse(Info.Unknown)                                       // E-IsZeroSucc
+    | TmIsZero(fi, t1) ->                                           // E-IsZero
         let t1' = smallStepEvaluate t1
         TmIsZero(fi, t1')
     | _ -> raise NoRuleApplies
 
+let rec evaluate t =
+    try
+        let t' = smallStepEvaluate t
+        evaluate t
+    with NoRuleApplies -> t
+
+// big-step evaluation
+let rec bigStepEvaluate t =
+    match t with
+    | v when isValue v -> v
+    | TmIf(_, t1, t2, t3) -> 
+        let t1' = bigStepEvaluate t1
+        match t1' with
+        | TmTrue(_) -> bigStepEvaluate t2
+        | TmFalse(_) -> bigStepEvaluate t3
+        | _ -> raise NoRuleApplies
+    | TmSucc(fi, t1) ->
+        let nv1 = bigStepEvaluate t1
+        if isNumericalValue nv1 then
+            TmSucc(fi, nv1)
+        else
+            raise NoRuleApplies
 
 [<EntryPoint>]
-let main argv = 
+let main argv =
     printfn "%A" argv
     0 // return an integer exit code
